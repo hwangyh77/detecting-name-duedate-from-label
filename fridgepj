@@ -1,0 +1,78 @@
+import numpy as np
+import cv2
+from PIL import Image
+import pytesseract
+import re
+import pandas as pd
+import pymysql
+from sqlalchemy import create_engine
+
+cap = cv2.VideoCapture(0)                       # 0번 카메라 연결
+if cap.isOpened() :
+    while True:
+        ret, frame = cap.read()                 # 카메라 프레임 읽기
+        if ret:
+            cv2.imshow('camera',frame)          # 프레임 화면에 표시
+
+            press = cv2.waitKey(1)              # 키보드 입력 반환 값 저장
+            if (press == ord('a')):             # a누르면 사진저장
+                cv2.imwrite('C:/frigeImage/frige.jpg', frame) # 프레임을 'photo.jpg'에 저장
+                cv2.destroyAllWindows()
+            elif(press == 27):
+                cv2.destroyAllWindows()
+
+                image = cv2.imread('C:/frigeImage/frige.jpg', cv2.IMREAD_GRAYSCALE)
+                # Adaptive Thresholding 적용
+                max_output_value = 255  # 출력 픽셀 강도의 최대값
+                neighborhood_size = 99
+                subtract_from_mean = 10
+                image_binarized = cv2.adaptiveThreshold(image,
+                                                        max_output_value,
+                                                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                        cv2.THRESH_BINARY,
+                                                        neighborhood_size,
+                                                        subtract_from_mean)
+                cv2.imwrite('C:/frigeImage/frigedone.jpg', image_binarized)
+
+                text = pytesseract.image_to_string(Image.open("C:/frigeImage/frigedone.jpg"), lang="kor")
+                size_table = re.split('\n', text)   # \n을 기준으로 text구분
+                matchers = ['품목명:', '유통기한:']
+                size = [s for s in size_table if any(x in s for x in matchers)]
+                size2 = []
+                for i in range(len(size)):
+                    size2.append(size[i].split())
+                size3 = list(map(list, zip(*size2)))  # 리스트를 transpose하는 법
+                df_size = pd.DataFrame(size3[1:], columns=size3[0])
+                df_size.to_csv('C:/frigedata/fgdata.xlsx', header=False, index=False)
+
+                print(size_table)
+                print('----------')
+                print(size3)
+                print('----------')
+                print(df_size)
+                #print('**********************')
+                #print(size3[1][1])
+                #print('**********************')
+                #print(size3[1][0])
+
+
+                #engine = create_engine("mysql+pymysql:yoohwan:yoohwan77@localhost/fridge")
+                #conn = engine.connect()
+                #size3[1].to_sql(name='fgdata', con=engine, if_exists='append',index=False)
+                db = pymysql.connect(host="localhost", user="yoohwan", password="yoohwan77", charset="utf8")
+                print(db)
+                cursor = db.cursor()
+                cursor.execute('USE fridge')
+                sql = "INSERT INTO `fgdata`(name, date) VALUES (%s, %s);"
+                cursor.executemany(sql, size3)
+                db.commit()
+                db.close()
+
+                break
+        else:
+            print('no frame!')
+            break
+else:
+    print('no camera!')
+cap.release()
+cv2.destroyAllWindows()
